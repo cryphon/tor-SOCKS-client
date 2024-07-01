@@ -1,43 +1,39 @@
 /* toralize.c */
 #include "toralize.h"
 #include <arpa/inet.h>
+#include <dlfcn.h>
 #include <netinet/in.h>
 #include <stdio.h>
+#include <unistd.h>
 
 
-Req *request(const char *dstip, const int dstport) {
+Req *request(struct sockaddr_in *sock2) {
     Req *req;
 
     req = malloc(req_size);
     req->vn = 4;
     req->cd = 1;
-    req->dstport = htons(dstport);
-    req->dstip = inet_addr(dstip);
+    req->dstport = sock2->sin_port;
+    req->dstip = sock2->sin_addr.s_addr;
     strncpy(req->userid, USERNAME, 8);
 
     return req;
 }
 
 
-int main(int argc, char *argv[]) {
-    
-    char *hostname;
-    int port, s;
+int connect(int s2, const struct sockaddr *sock2, socklen_t addrlen) {
+
+    int s; // s is ours, s2 is provided by  application
     struct sockaddr_in sock;
     Req *req;
     Res *res;
     char buff[res_size];
     int success_b;
     char tmp[512];
+    //create fnc ptr
+    int (*ptr)(int, const struct sockaddr*, socklen_t);
 
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s <host> <port>\n", argv[0]);
-        return -1;
-    }
-
-    hostname = argv[1];
-    port = atoi(argv[2]);
-
+    ptr = dlsym(RTLD_NEXT, "connect");
     s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) {
         perror("[error]: socket failed to initialize\n");
@@ -48,7 +44,7 @@ int main(int argc, char *argv[]) {
     sock.sin_port = htons(PROXY_PORT);
     sock.sin_addr.s_addr = inet_addr(PROXY);
 
-    if (connect(s, (struct sockaddr *)&sock, sizeof(sock))){
+    if (ptr(s, (struct sockaddr *)&sock, sizeof(sock))){
         perror("[error]: connection failed to initialize\n");
         return -1;
     }
@@ -56,7 +52,7 @@ int main(int argc, char *argv[]) {
     printf("[info]: Connection established\n");
 
     // create request struct
-    req = request(hostname, port);
+    req = request((struct sockaddr_in*)sock2);
 
     // send packet
     write(s, req, req_size);
@@ -82,21 +78,12 @@ int main(int argc, char *argv[]) {
     }
 
 
-    printf("[info]: Successfully initiated connection through proxy to %s:%d\n", hostname, port);
+    printf("[info]: Successfully initiated connection through proxy.\n");
 
-    memset(tmp, 9, 512);
-    snprintf(tmp, 511, 
-            "HEAD / HTTP:/1.0\r\n"
-            "Host: www.google.com\r\n"
-            "\r\n");
 
-    write(s, tmp, strlen(tmp));
-    memset(tmp, 0, 512);
+    //pipe our socket with end-apl socket
+    dup2(s, s2);
 
-    read(s, tmp, 511);
-    printf("'%s'\n", tmp);
-
-    close(s);
     free(req);
     return 0;
 }
