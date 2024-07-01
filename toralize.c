@@ -55,7 +55,9 @@ int connect(int s2, const struct sockaddr *sock2, socklen_t addrlen) {
     req = request((struct sockaddr_in*)sock2);
 
     // send packet
-    write(s, req, req_size);
+    if (write(s, req, req_size) < 0) {
+        perror("[error]: Failed to write request to proxy");
+    }
 
     // set buffer to empty and read to res to buffer
     memset(buff, 0, res_size);
@@ -80,9 +82,40 @@ int connect(int s2, const struct sockaddr *sock2, socklen_t addrlen) {
 
     printf("[info]: Successfully initiated connection through proxy.\n");
 
+    //pipe our socket with end-appl socket
+    if(dup2(s, s2) < 0) {
+            perror("[error]: Failed to duplicate socket");
+            free(req);
+            close(s);
+            return -1;
+        }
 
-    //pipe our socket with end-apl socket
-    dup2(s, s2);
+
+    // debug print HTTP request from pipe application
+    // char request_buff[4096];
+    // ssize_t bytes_read, bytes_written;
+    // while((bytes_read = read(s2, request_buff, sizeof(request_buff))) > 0) {
+    //     bytes_written = write(s, request_buff, bytes_read);
+    //     if(bytes_written < 0) {
+    //         perror("[error]: Failed to forwartd HTTP request to proxy");
+    //         close(s);
+    //         return -1;
+    //     }
+    // }
+    // if(bytes_read < 0) {
+    //     perror("[error]: Failed to read HTTP request from application");
+    //     close(s);
+    // }
+
+    char request_buff[1024];
+    ssize_t bytes_read = read(s2, request_buff, sizeof(request_buff) -1);
+    if (bytes_read > 0){
+        request_buff[bytes_read] = '\0';
+        printf("debug]: HTTP request from application: \n%s\n", request_buff);
+    }
+    else {
+        perror("[error]: Failed to read HTTP request from application");
+    }
 
     free(req);
     return 0;
