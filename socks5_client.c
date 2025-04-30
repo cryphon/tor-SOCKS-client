@@ -18,6 +18,7 @@ struct socks5_ctx {
     int timeout;
     int proxy_sock;
     int last_error;
+    int verbose;
     char error_msg[256];
 };
 
@@ -33,6 +34,7 @@ socks5_ctx* socks5_create_ctx(const char* host, uint16_t port) {
     ctx->proxy_port = port;
     ctx->use_auth = 0;
     ctx->timeout = DEFAULT_TIMEOUT;
+    ctx->verbose = 0;
     ctx->proxy_sock = -1;
     ctx->last_error = 0;
 
@@ -58,7 +60,7 @@ void socks5_set_timeout(socks5_ctx* ctx, int timeout) {
 }
 
 static void socks5_log(socks5_ctx* ctx, const char* format, ...) {
-    if(!ctx) {
+    if(!ctx || !ctx->verbose) {
         return;
     }
 
@@ -68,6 +70,43 @@ static void socks5_log(socks5_ctx* ctx, const char* format, ...) {
     vfprintf(stderr, format, args);
     fprintf(stderr, "\n");
     va_end(args);
+}
+
+void socks5_set_verbose(socks5_ctx* ctx, int verbose) {
+    if(!ctx) {
+        return;
+    }
+    ctx->verbose = verbose;
+}
+
+static void socks5_set_error(socks5_ctx* ctx, int err_code, const char* format, ...) {
+    if(!ctx) {
+        return;
+    }
+
+    ctx->last_error = err_code;
+    va_list args;
+    va_start(args, format);
+    vsnprintf(ctx->error_msg, sizeof(ctx->error_msg) - 1, format, args);
+    va_end(args);
+
+    if(ctx->verbose) {
+        fprintf(stderr, "[SOCKS ERROR] %s (code: %d)\n", ctx->error_msg, err_code);
+    }
+}
+
+const char* socks5_get_error(socks5_ctx* ctx) {
+    if(!ctx) {
+        return "Invalid context";
+    }
+    return ctx->error_msg;
+}
+
+int socks5_get_error_code(socks5_ctx* ctx) {
+    if(!ctx) {
+        return -1;
+    }
+    return ctx->last_error;
 }
 
 static int socks5_connect_to_proxy(socks5_ctx* ctx) {
@@ -91,8 +130,10 @@ static int socks5_connect_to_proxy(socks5_ctx* ctx) {
     snprintf(port_str, sizeof(port_str), "%d", ctx->proxy_port);
 
     socks5_log(ctx, "Resolving proxy addr: %s:%s", ctx->proxy_host, port_str);
+
     int ret = getaddrinfo(ctx->proxy_host, port_str, &hints, &res);
     if(!ret) {
+        socks5_set_error(ctx, ret, "Failed to resolve proxy address: %s", gai_strerror(ret));
         return -1;
     }
     

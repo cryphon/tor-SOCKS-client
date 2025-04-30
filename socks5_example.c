@@ -23,6 +23,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    socks5_set_verbose(ctx, 1);
+
     socks5_set_timeout(ctx, 30);
 
     int sock = socks5_connect(ctx, host, port);
