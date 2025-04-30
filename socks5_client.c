@@ -132,7 +132,7 @@ static int socks5_connect_to_proxy(socks5_ctx* ctx) {
     socks5_log(ctx, "Resolving proxy addr: %s:%s", ctx->proxy_host, port_str);
 
     int ret = getaddrinfo(ctx->proxy_host, port_str, &hints, &res);
-    if(!ret) {
+    if(ret != 0) {
         socks5_set_error(ctx, ret, "Failed to resolve proxy address: %s", gai_strerror(ret));
         return -1;
     }
