@@ -25,9 +25,6 @@ static ssize_t (*original_read)(int fd, void* buf, size_t count);
 
 /* logging */
 static void toralize_log(const char* format, ...) {
-    if(!toralize_config.verbose) {
-        return;
-    }
 
     va_list args;
     va_start(args, format);
@@ -59,7 +56,7 @@ static void init_toralize() {
     }
 
     /* set default config */
-    strcpy(*toralize_config.tor_host, PROXY_HOST);
+    strncpy(toralize_config.tor_host, PROXY_HOST, MAX_AUTH_LEN -1);
     toralize_config.tor_port = PROXY_PORT;
 
     /* read config file if exists */
@@ -85,7 +82,7 @@ FILE *config_file = fopen(config_path, "r");
             char key[256], value[256];
             if(sscanf(line, "%255[^=]=%255s", key, value) == 2) {
                 if(strcmp(key, "tor_host") == 0) {
-                    strncpy(*toralize_config.tor_host, value, sizeof(toralize_config.tor_host) - 1);
+                    strncpy(toralize_config.tor_host, value, MAX_AUTH_LEN - 1);
                 } else if(strcmp(key, "tor_port") == 0) {
                     toralize_config.tor_port = (uint16_t)atoi(value);
                 } else if(strcmp(key, "verbose") == 0) {
@@ -124,12 +121,56 @@ FILE *config_file = fopen(config_path, "r");
     }
 
     /* load original functions */
+    
+    dlerror();
     original_connect = dlsym(RTLD_NEXT, "connect");
+    char* err_connect = dlerror();
+    if(err_connect) {
+        fprintf(stderr, "dlsym error: %s\n", err_connect);
+        exit(1);
+    }
+
+
+    dlerror();
     original_close = dlsym(RTLD_NEXT, "close");
+    char* err_close = dlerror();
+    if(err_close) {
+        fprintf(stderr, "dlsym error: %s\n", err_close);
+        exit(1);
+    }
+
+    dlerror();
     original_send = dlsym(RTLD_NEXT, "send");
+    char* err_send = dlerror();
+    if(err_send) {
+        fprintf(stderr, "dlsym error: %s\n", err_send);
+        exit(1);
+    }
+    
+    dlerror();
     original_recv = dlsym(RTLD_NEXT, "recv");
+    char* err_recv = dlerror();
+    if(err_recv) {
+        fprintf(stderr, "dlsym error: %s\n", err_recv);
+        exit(1);
+    }
+    
+    dlerror();
     original_write = dlsym(RTLD_NEXT, "write");
+    char* err_write = dlerror();
+    if(err_write) {
+        fprintf(stderr, "dlsym error: %s\n", err_write);
+        exit(1);
+    }
+
+
+    dlerror();
     original_read = dlsym(RTLD_NEXT, "read");
+    char* err_read = dlerror();
+    if(err_read) {
+        fprintf(stderr, "dlsym error: %s\n", err_read);
+        exit(1);
+    }
 
     /* init socket tracking table */
     memset(managed_socks, 0, sizeof(managed_socks));
@@ -210,7 +251,7 @@ int connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
     toralize_log("Intercepting connection to %s:%d", host, port);
 
     /* create SOCKS5 ctx for Tor */
-    socks5_ctx* ctx = socks5_create_ctx(*toralize_config.tor_host, toralize_config.tor_port);
+    socks5_ctx* ctx = socks5_create_ctx(toralize_config.tor_host, toralize_config.tor_port);
     if(!ctx) {
         errno = ECONNREFUSED;
         return -1;
@@ -280,7 +321,13 @@ int getaddrinfo(const char* node, const char* service, const struct addrinfo* hi
     static int (*original_getaddrinfo)(const char*, const char*, const struct addrinfo*, struct addrinfo**);
 
     if(!original_getaddrinfo) {
+        dlerror();
         original_getaddrinfo = dlsym(RTLD_NEXT, "getaddrinfo");
+        char* err = dlerror();
+        if(err) {
+            fprintf(stderr, "dlsym error loading getaddrinfo: %s\n", err);
+            exit(1);
+        }
     }
 
     char* error = dlerror();
@@ -349,7 +396,7 @@ int getaddrinfo(const char* node, const char* service, const struct addrinfo* hi
             }
         }
 
-        sin->sin_addr.s_addr = inet_addr("127.0.0.1");
+        sin->sin_addr.s_addr = inet_addr("240.0.0.1");
         
         ai->ai_addr = (struct sockaddr*)sin;
         ai->ai_addrlen = sizeof(struct sockaddr_in);
@@ -390,6 +437,11 @@ int getaddrinfo(const char* node, const char* service, const struct addrinfo* hi
     /* set canonical name if requested */
     if(node && (hints == NULL || !(hints->ai_flags & AI_NUMERICHOST))) {
         ai->ai_canonname = strdup(node);
+        if(!ai->ai_canonname) {
+            free(ai->ai_addr);
+            free(ai);
+            return EAI_MEMORY;
+        }
     }
 
     ai->ai_next = NULL;

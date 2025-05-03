@@ -19,7 +19,7 @@
 
 /* global state */
 static struct {
-    char* tor_host[MAX_AUTH_LEN];
+    char tor_host[MAX_AUTH_LEN];
     uint16_t tor_port;
     int init;
     int verbose;
