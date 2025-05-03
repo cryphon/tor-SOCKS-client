@@ -1,62 +1,49 @@
 /* toralize.h */
+#ifndef TORALIZE_H
+#define TORALIZE_H
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <dlfcn.h>
+#include "socks5_proto.h"
+#include "socks5_client.h"
+#include <netdb.h>
 
 
-#define PROXY "127.0.0.1"
+#define PROXY_HOST "127.0.0.1"
 #define PROXY_PORT 9050
-#define USERNAME "nazuna"
-#define req_size sizeof(struct proxy_request)
-#define res_size sizeof(struct proxy_response)
+#define DEFAULT_CONFIG_FILE "toralize.conf"
+#define MAX_MANAGED_SOCKS 1024
 
-typedef unsigned char int8;
-typedef unsigned short int int16;
-typedef unsigned int int32;
-
-
-/*
-link: https://www.openssh.com/txt/socks4.protocol
-The client includes in the request packet the IP address and the port number of the
-destination host, and userid, in the following format.
-
-                +----+----+----+----+----+----+----+----+----+----+....+----+
-                | VN | CD | DSTPORT |      DSTIP        | USERID       |NULL|
-                +----+----+----+----+----+----+----+----+----+----+....+----+
- # of bytes:	   1    1      2              4           variable       1
-*/
-struct proxy_request {
-    int8 vn;                    // SOCKS version protocol
-    int8 cd;                    // command code, 1 for CONNECT request
-    int16 dstport;              // destination port
-    int32 dstip;
-    unsigned char userid[8];
+/* global state */
+static struct {
+    char* tor_host[MAX_AUTH_LEN];
+    uint16_t tor_port;
+    int init;
+    int verbose;
+    pthread_mutex_t mutex;
+    char** excluded;
+    int excluded_cnt;
+} toralize_config = {
+    .init = 0,
+    .verbose = 0,
+    .excluded = NULL,
+    .excluded_cnt = 0
 };
-typedef struct proxy_request Req;
-/* 
-If the request is granted, the SOCKS server makes a connection to the specified port of the destination host;
-A reply packet is sent to the clinent when this connection is established, or when the request is rejected or the operation fails.
 
-                +----+----+----+----+----+----+----+----+
-                | VN | CD | DSTPORT |      DSTIP        |
-                +----+----+----+----+----+----+----+----+
- # of bytes:	   1    1      2              4
+/* map of wrapped socket fd to their contexts */
+static struct {
+    int og_fd;
+    socks5_ctx* ctx;
+    int through_tor;
+    char dest_host[MAX_AUTH_LEN];
+    uint16_t dest_port;
+} managed_socks[MAX_MANAGED_SOCKS];
 
- _, __ = non relevant variables
-*/
-struct proxy_response {
-    int8 vn;
-    int8 cd;
-    int16 _;
-    int32 __;
-};
-typedef struct proxy_response Res;
+int connect(int, const struct sockaddr* addr, socklen_t addr_len);
+int close(int fd);
+int getaddrinfo(const char* node, const char* service, const struct addrinfo* hints, struct addrinfo** res);
 
-
-Req *request(struct sockaddr_in*);
-int connect(int, const struct sockaddr*, socklen_t);
+#endif // TORALIZE_H
